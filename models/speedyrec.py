@@ -30,55 +30,16 @@ class AttentionPooling(nn.Module):
         x = torch.reshape(x, (bz, -1))  # (bz, 400)
         return x
 
-
-class MoEFFN(nn.Module):
-    def __init__(self, input_size, output_size, hidden_size, num_expert, k, layer_norm_eps, hidden_dropout_prob):
-        super(MoEFFN, self).__init__()
-        self.MoELayer = MoE(input_size, output_size, hidden_size, num_expert, k)
-        self.LayerNorm = nn.LayerNorm(output_size, eps=layer_norm_eps)
-        self.dropout = nn.Dropout(hidden_dropout_prob)
-
-    def forward(self, attention_output):
-        len_size = attention_output.size()
-        if len(len_size) == 3:
-            B, L, D = attention_output.size()
-            attention_output = attention_output.view(-1, D)
-        hidden_states, moe_loss = self.MoELayer(attention_output)
-        hidden_states = self.dropout(hidden_states)
-        # hidden_states = self.LayerNorm(hidden_states + attention_output)
-        if len(len_size) == 3:
-            hidden_states = hidden_states.view(B, L, D)
-        return hidden_states, moe_loss
-
-
 class TextEncoder(nn.Module):
     def __init__(self, args):
         super(TextEncoder, self).__init__()
         self.args = args
-
-        config_class, model_class, tokenizer_class = MODEL_CLASSES[args.pretreained_model]
-        self.config = config_class.from_pretrained(args.pretrained_model_path, output_hidden_states=True)
-
-        if args.num_hidden_layers != -1: self.config.num_hidden_layers = args.num_hidden_layers
-        if 'speedymind_ckpts' in args.pretrained_model_path:
-            self.unicoder = model_class(config=self.config)
-        else:
-            self.unicoder = model_class.from_pretrained(
-                args.pretrained_model_path,
-                config=self.config)
-
+        self.config = ffconfig
+        self.unicoder = Fastformer(self.config)
         self.drop_layer = nn.Dropout(p=args.drop_rate)
         self.fc = nn.Linear(
             self.config.hidden_size,
             args.news_dim)
-
-        self.moe_layer = MoEFFN(input_size=self.config.hidden_size, 
-                                output_size=args.news_dim, 
-                                hidden_size=ffconfig.expert_hidden_size, 
-                                num_expert=ffconfig.num_expert, 
-                                k=ffconfig.num_selected_expert,
-                                layer_norm_eps=ffconfig.layer_norm_eps,
-                                hidden_dropout_prob=ffconfig.hidden_dropout_prob)
 
         if 'abstract' in self.args.news_attributes:
             self.text_att = AttentionPooling(
@@ -94,17 +55,14 @@ class TextEncoder(nn.Module):
         text_ids = torch.narrow(inputs, 1, 0, num_words)
         text_attmask = torch.narrow(inputs, 1, num_words, num_words)
 
-        sent_vec = self.unicoder(text_ids, text_attmask)[0]  # B L D
-        # sent_vec = self.unicoder(text_ids, text_attmask)
-        if 'abstract' in self.args.news_attributes:
-            sent_vec = self.sent_att(sent_vec, text_attmask)
-        else:
-            sent_vec = torch.mean(sent_vec, dim=1)
+        # sent_vec = self.unicoder(text_ids, text_attmask)[0]  # B L D
+        sent_vec = self.unicoder(text_ids, text_attmask)
+        # if 'abstract' in self.args.news_attributes:
+        #     sent_vec = self.sent_att(sent_vec, text_attmask)
+        # else:
+        #     sent_vec = torch.mean(sent_vec, dim=1)
         
-        if self.args.use_moe:
-            news_vec, _ = self.moe_layer(sent_vec)
-        else:
-            news_vec = self.fc(sent_vec)
+        news_vec = self.fc(sent_vec)
        
         return news_vec
 
@@ -118,6 +76,7 @@ class TextEncoder(nn.Module):
             abs = torch.narrow(inputs, 1, self.args.num_words_title * 2, self.args.num_words_abstract * 2)
             abs_vec = self.sent_encode(abs)
             vecs.append(abs_vec)
+
         if len(vecs) == 1:
             return vecs[0]
         else:
@@ -157,7 +116,7 @@ class UserEncoder(nn.Module):
         #     sent_vecs = sent_vecs * log_mask.unsqueeze(2) + padding_doc * (1 - log_mask.unsqueeze(2))
         #     user_log_vecs = attn_pool(sent_vecs)
         # user_log_vecs = self.encoder(inputs_embeds=sent_vecs, attention_mask=log_mask)[1]
-        user_log_vecs = self.encoder(sent_vecs, log_mask)
+        user_log_vecs = self.encoder(inputs=sent_vecs, mask=log_mask)
         return user_log_vecs
 
     def forward(self, user_news_vecs, log_mask,
