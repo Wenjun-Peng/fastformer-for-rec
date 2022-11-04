@@ -137,11 +137,26 @@ class FastSelfAttention(nn.Module):
         return weighted_value
 
 
+class FastformerSelfOutput(nn.Module):
+    def __init__(self, config):
+        super(FastformerSelfOutput, self).__init__()
+        self.dense = nn.Linear(config.hidden_size, config.hidden_size)
+        self.LayerNorm = BertLayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+
+    def forward(self, hidden_states, input_tensor):
+        hidden_states = self.dense(hidden_states)
+        hidden_states = self.dropout(hidden_states)
+        # hidden_states = self.LayerNorm(hidden_states + input_tensor)
+        hidden_states = hidden_states + input_tensor
+        return hidden_states
+
+
 class FastAttention(nn.Module):
     def __init__(self, config):
         super(FastAttention, self).__init__()
         self.self = FastSelfAttention(config)
-        self.output = BertSelfOutput(config)
+        self.output = FastformerSelfOutput(config)
 
     def forward(self, input_tensor, attention_mask):
         self_output = self.self(input_tensor, attention_mask)
@@ -201,11 +216,11 @@ class FastformerLayer(nn.Module):
         super(FastformerLayer, self).__init__()
         self.attention = FastAttention(config)
         self.is_moe = bool(config.is_moe)
-        # if self.is_moe:
-        #     self.ffn = MoEFFN(config)
-        # else:
-            # self.ffn = FastformerFFN(config)
-        self.ffn = FastformerFFN(config)
+        if self.is_moe:
+            self.ffn = MoEFFN(config)
+        else:
+            self.ffn = FastformerFFN(config)
+        # self.ffn = FastformerFFN(config)
 
     def forward(self, hidden_states, attention_mask):
         attention_output = self.attention(hidden_states, attention_mask)
@@ -256,10 +271,10 @@ class FastformerEncoder(nn.Module):
         batch_size, seq_length, emb_dim = input_embs.shape
         position_ids = torch.arange(seq_length, dtype=torch.long, device=input_embs.device)
         position_ids = position_ids.unsqueeze(0).expand(batch_size, -1)
-        position_embeddings = self.position_embeddings(position_ids)
+        # position_embeddings = self.position_embeddings(position_ids)
 
-        embeddings = input_embs + position_embeddings
-        
+        # embeddings = input_embs + position_embeddings
+        embeddings = input_embs
         embeddings = self.LayerNorm(embeddings)
         embeddings = self.dropout(embeddings)
         #print(embeddings.size())
