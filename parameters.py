@@ -23,7 +23,7 @@ def parse_args():
     parser.add_argument("--batch_size", type=int, default=64)
 
     # model training
-    parser.add_argument("--epochs", type=int, default=6)
+    parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--lr", type=float, default=0.0001)
     parser.add_argument(
         "--news_attributes",

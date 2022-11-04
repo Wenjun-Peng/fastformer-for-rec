@@ -4,6 +4,29 @@ import torch
 from torch import nn
 from transformers.modeling_bert import BertSelfOutput, BertIntermediate, BertOutput
 from models.moe import MoE
+from torch.nn import init
+
+BertLayerNorm = torch.nn.LayerNorm
+
+def gelu(x):
+    """ Original Implementation of the gelu activation function in Google Bert repo when initially created.
+        For information: OpenAI GPT's gelu is slightly different (and gives slightly different results):
+        0.5 * x * (1 + torch.tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3))))
+        Also see https://arxiv.org/abs/1606.08415
+    """
+    return x * 0.5 * (1.0 + torch.erf(x / math.sqrt(2.0)))
+
+def gelu_new(x):
+    """ Implementation of the gelu activation function currently in Google Bert repo (identical to OpenAI GPT).
+        Also see https://arxiv.org/abs/1606.08415
+    """
+    return 0.5 * x * (1 + torch.tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3))))
+
+def swish(x):
+    return x * torch.sigmoid(x)
+
+
+ACT2FN = {"gelu": gelu, "relu": torch.nn.functional.relu, "swish": swish, "gelu_new": gelu_new}
 
 
 class AttentionPooling(nn.Module):
@@ -129,13 +152,22 @@ class FastAttention(nn.Module):
 class FastformerFFN(nn.Module):
     def __init__(self, config):
         super(FastformerFFN, self).__init__()
-        self.intermediate = BertIntermediate(config)
-        self.output = BertOutput(config)
+        self.intermediate_dense = nn.Linear(config.hidden_size, config.hidden_size)
+        self.LayerNorm = BertLayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.output_dense = nn.Linear(config.hidden_size, config.intermediate_size)
+        if isinstance(config.hidden_act, str) or (sys.version_info[0] == 2 and isinstance(config.hidden_act, unicode)):
+            self.intermediate_act_fn = ACT2FN[config.hidden_act]
+        else:
+            self.intermediate_act_fn = config.hidden_act
 
-    def forward(self, attention_output):
-        intermediate_output = self.intermediate(attention_output)
-        layer_output = self.output(intermediate_output, attention_output)
-        return layer_output
+    def forward(self, input_tensor):
+        hidden_states = self.intermediate_dense(input_tensor)
+        hidden_states = self.intermediate_act_fn(hidden_states)
+        hidden_states = self.output_dense(hidden_states)
+        hidden_states = self.dropout(hidden_states)
+        # hidden_states = self.LayerNorm(hidden_states + input_tensor)
+        return hidden_states + input_tensor
 
 class MoEFFN(nn.Module):
     def __init__(self, config):
@@ -168,11 +200,12 @@ class FastformerLayer(nn.Module):
     def __init__(self, config):
         super(FastformerLayer, self).__init__()
         self.attention = FastAttention(config)
-        self.is_moe = config.is_moe
-        if self.is_moe:
-            self.ffn = MoEFFN(config)
-        else:
-            self.ffn = FastformerFFN(config)
+        self.is_moe = bool(config.is_moe)
+        # if self.is_moe:
+        #     self.ffn = MoEFFN(config)
+        # else:
+            # self.ffn = FastformerFFN(config)
+        self.ffn = FastformerFFN(config)
 
     def forward(self, hidden_states, attention_mask):
         attention_output = self.attention(hidden_states, attention_mask)
@@ -243,11 +276,23 @@ class Fastformer(torch.nn.Module):
 
     def __init__(self, config):
         super(Fastformer, self).__init__()
+        embs = self.load_embedding('data/glove/glove_embs_for_mind.pt')
         self.config = config
-        self.word_embedding = nn.Embedding(config.vocab_size, 256, padding_idx=0)
+        self.word_embedding = nn.Embedding(config.vocab_size, 300, padding_idx=0, _weight=embs)
+        self.proj = nn.Linear(300, config.hidden_size)
         self.fastformer_model = FastformerEncoder(config)
         self.criterion = nn.CrossEntropyLoss()
         self.apply(self.init_weights)
+
+    def load_embedding(self, path):
+        glove_embs = torch.load(path)
+        PAD_UNK = torch.empty(2, glove_embs.size(-1))
+        init.normal_(PAD_UNK)
+
+        embs = torch.cat([PAD_UNK, glove_embs], dim=0)
+        # print(glove_embs.size(), embs.size())
+        print('=========successfully load glove==========')
+        return embs
 
     def init_weights(self, module):
         if isinstance(module, (nn.Linear, nn.Embedding)):
@@ -261,5 +306,7 @@ class Fastformer(torch.nn.Module):
     def forward(self, input_ids=None, mask=None, inputs=None):
         if input_ids is not None:
             inputs = self.word_embedding(input_ids)
+            inputs = self.proj(inputs)
+        # print(inputs.size())
         text_vec = self.fastformer_model(inputs, mask)
         return text_vec

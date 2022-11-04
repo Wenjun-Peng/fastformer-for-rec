@@ -10,6 +10,8 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 
 from utility.utils import MODEL_CLASSES
+from nltk.tokenize import wordpunct_tokenize
+import json
 
 
 class NewsInfo:
@@ -25,8 +27,18 @@ class NewsInfo:
         else:
             self.category_dict, self.subcategory_dict = {}, {}
 
-        _, _, tokenizer_class = MODEL_CLASSES[args.pretreained_model]
-        self.tokenizers = tokenizer_class.from_pretrained(self.args.pretrained_model_path, do_lower_case=True)
+        # _, _, tokenizer_class = MODEL_CLASSES[args.pretreained_model]
+        self.tokenizers = wordpunct_tokenize
+        self.vocab_map, self.count_map = self.get_vocab_map('data/glove/vocab.txt', 'data/glove/count_map.json')
+
+    def get_vocab_map(self, vocab_path, count_path):
+        word_dict = {}
+        with open(vocab_path, 'r') as f:
+            for line in f:
+                word_dict[line.strip()] = len(word_dict)
+
+        word_count_map = json.loads(open(count_path, 'r').read())
+        return word_dict, word_count_map
 
     def update_dict(self, dict, key, value=None):
         if key not in dict:
@@ -38,8 +50,31 @@ class NewsInfo:
 
     def sent_tokenize(self, sent, max_len):
         assert isinstance(sent, str)
-        sent_split = self.tokenizers(sent, max_length=max_len, pad_to_max_length=True, truncation=True)
-        return sent_split
+        # sent_split = self.tokenizers(sent, max_length=max_len, pad_to_max_length=True, truncation=True)
+        # return sent_split
+        sent_split = self.tokenizers(sent)
+
+        input_ids = []
+        attention_mask = []
+        for w in sent_split:
+            if self.count_map[w]:
+                input_ids.append(self.vocab_map[w])
+            else:
+                input_ids.append(1)
+
+        input_ids = input_ids[:max_len]
+        sent_len = len(input_ids)
+        attention_mask.extend([1] * sent_len)
+        if sent_len < max_len:
+            input_ids.extend([0] * (max_len-sent_len))
+            attention_mask.extend([0] * (max_len-sent_len))
+
+        input_ids = np.asarray(input_ids)
+        attention_mask = np.asarray(attention_mask)
+
+        sent = {'input_ids': input_ids, 'attention_mask': attention_mask}
+        return sent
+
 
     def _parse_news_attrs(self, attr_raw_values):
         parser = {

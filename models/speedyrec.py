@@ -63,7 +63,7 @@ class TextEncoder(nn.Module):
         #     sent_vec = torch.mean(sent_vec, dim=1)
         
         news_vec = self.fc(sent_vec)
-       
+
         return news_vec
 
     def forward(self, inputs):
@@ -78,11 +78,11 @@ class TextEncoder(nn.Module):
             vecs.append(abs_vec)
 
         if len(vecs) == 1:
-            return vecs[0]
+            return torch.relu(vecs[0])
         else:
             vecs = torch.cat(vecs, dim=-1).view(-1, len(vecs), self.args.news_dim)  # B 2 D
             final_news_vector = self.text_att(vecs)
-            return final_news_vector
+            return torch.relu(final_news_vector)
 
 
 class UserEncoder(nn.Module):

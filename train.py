@@ -75,12 +75,13 @@ def train(local_rank,
                 data_paths.sort()
 
         model = MLNR(args)
-        if 'speedymind_ckpts' in args.pretrained_model_path:
-            train_path = os.path.join(args.pretrained_model_path, 'fastformer4rec.pt')
-            model.load_param(train_path)
+        # if 'speedymind_ckpts' in args.pretrained_model_path:
+        #     train_path = os.path.join(args.pretrained_model_path, 'fastformer4rec.pt')
+        #     model.load_param(train_path)
 
 
         model = model.to(device)
+        print(model)
         rest_param = filter(
             lambda x: id(x) not in list(map(id, model.news_encoder.unicoder.parameters())),
             model.parameters())

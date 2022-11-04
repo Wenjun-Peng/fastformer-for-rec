@@ -9,6 +9,8 @@ from contextlib import contextmanager
 import torch.distributed as dist
 
 from transformers import AutoTokenizer, AutoConfig, AutoModel
+from nltk.tokenize import wordpunct_tokenize
+import json
 from models.tnlrv3.modeling import TuringNLRv3ForSequenceClassification
 from models.tnlrv3.configuration_tnlrv3 import TuringNLRv3Config
 from models.tnlrv3.tokenization_tnlrv3 import TuringNLRv3Tokenizer
@@ -140,4 +142,110 @@ class timer:
         timer.NAMED_TAPE[self.name] += timer.time() - self.start
         print(self.name, timer.NAMED_TAPE[self.name])
 
+
+def load_glove(path, word_dict, word_count_map):
+    print("Loading Glove Model")
+    glove_embs = []
+    glove_words = []
+    
+    with open(path,'r') as f:
+        for line in f:
+            split_line = line.split()
+            
+            word = split_line[0]
+            if word in word_dict:
+                if len(split_line) == 301:
+                    embedding = np.array(split_line[1:], dtype=np.float64)
+                    word_dict[word] = len(word_dict) + 2
+                    glove_words.append(word)
+                    glove_embs.append(embedding)
+                    word_count_map[word] = 1
+                    
+    print(f"{len(glove_words)} words loaded!")
+    print(len(glove_embs))
+    glove_embs = torch.as_tensor(glove_embs, dtype=torch.float)
+    return glove_words, glove_embs, word_count_map
+
+
+def load_file(path, label_map):
+    all_text = []
+    all_label = []
+    with open(path, 'r') as f:
+        for line in f:
+            news_info = line.strip().split('\t')
+            label_name = news_info[1]
+            if label_name not in label_map:
+                label_map[label_name] = len(label_map)
+            text = news_info[3]
+            all_text.append(text)
+            all_label.append(label_map[label_name])
+    return all_text, all_label, label_map
+
+
+def load_mind(root):
+    train_path = os.path.join(root, 'MINDlarge_train/news.tsv')
+    test_path = os.path.join(root, 'MINDlarge_test/news.tsv')
+    dev_path = os.path.join(root, 'MINDlarge_dev/news.tsv')
+
+    label_map = {}
+
+    dataset = {'train': {'text': [], 'label': []},
+               'test': {'text': [], 'label': []},
+               'dev': {'text': [], 'label': []}}
+
+    all_text, all_label, label_map = load_file(train_path, label_map)
+    dataset['train']['text'] = all_text
+    dataset['train']['label'] = all_label
+
+    all_text, all_label, label_map = load_file(test_path, label_map)
+    dataset['test']['text'] = all_text
+    dataset['test']['label'] = all_label
+
+    all_text, all_label, label_map = load_file(dev_path, label_map)
+    dataset['dev']['text'] = all_text
+    dataset['dev']['label'] = all_label
+
+    dataset['class_num'] = len(label_map)
+    return dataset      
+
+def prepare_glove():
+    dataset = load_mind('/workspaceblobstore/v-wenjunpeng/mind/')
+    text=[]
+    label=[]
+
+    save_text = []
+    for row in dataset['train']['text']+dataset['test']['text']:
+        text.append(wordpunct_tokenize(row.lower()))
+        save_text.append(row.lower())
+    for row in dataset['train']['label']+dataset['test']['label']:
+        label.append(row)
+    word_dict= {'[PAD]':0, '[UNK]':1}
+    word_count_map = {'[PAD]':1, '[UNK]':1}
+    for sent in text:    
+        for token in sent:        
+            if token not in word_dict:
+                word_dict[token]=len(word_dict)
+                word_count_map[token] = 0
+    print(len(word_dict))
+    glove_words, glove_embs, word_count_map = load_glove('/workspaceblobstore/v-wenjunpeng/glove/glove.840B.300d.txt', word_dict, word_count_map)
+    word_count_map['[PAD]'] = 1
+    word_count_map['[UNK]'] = 1
+    torch.save(glove_embs, '../data/glove/glove_embs_for_mind.pt')
+
+    with open('../data/glove/vocab.txt', 'w') as f:
+        f.write('[PAD]\n')
+        f.write('[UNK]\n')
+        for w in glove_words:
+            f.write(w+'\n')
+
+    with open('../data/glove/count_map.json', 'w') as f:
+        f.write(json.dumps(word_count_map))
+    
+    
+if __name__ == '__main__':
+
+    prepare_glove()
+    with open('../data/glove/count_map.json', 'r') as f:
+        wcm = json.loads(f.read())
+        print(len(wcm))
 
