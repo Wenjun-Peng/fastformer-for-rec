@@ -102,6 +102,8 @@ def train(local_rank,
         else:
             ddp_model = model
 
+        kl_loss = nn.KLDivLoss(reduction="batchmean", log_target=True)
+
         logging.info('Training...')
         start_time = time.time()
         test_time = 0.0
@@ -196,8 +198,23 @@ def train(local_rank,
                                              candidate_inx,
                                              label_batch)
 
-                    loss += bz_loss.item()
-                    bz_loss.backward()
+                    hist_size = hist_sequence_mask.size()
+                    rand_mask = torch.randint(high=2, size=hist_size).cuda(device=device,non_blocking=True)
+                    fair_hist_mask = rand_mask * hist_sequence_mask
+
+                    _, y_hat_fair = ddp_model(news_vecs,
+                                             hist_sequence, fair_hist_mask,
+                                             candidate_inx,
+                                             label_batch)
+
+                    logsm_y_hat_fair = y_hat_fair.log_softmax(dim=-1)
+                    logsm_y_hat = y_hat.log_softmax(dim=-1)
+
+                    fair_loss = kl_loss(logsm_y_hat_fair, logsm_y_hat)
+
+                    final_loss = bz_loss + fair_loss
+                    loss += final_loss.item()
+                    final_loss.backward()
                     optimizer.step()
                     optimizer.zero_grad()
 
