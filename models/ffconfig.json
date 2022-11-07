@@ -16,5 +16,5 @@
     "num_expert": 4,
     "num_selected_expert": 2,
     "expert_hidden_size": 200,
-    "is_moe": 1
+    "is_moe": 0
 }
