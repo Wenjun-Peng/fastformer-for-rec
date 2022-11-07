@@ -181,8 +181,8 @@ class FastformerFFN(nn.Module):
         hidden_states = self.intermediate_act_fn(hidden_states)
         hidden_states = self.output_dense(hidden_states)
         hidden_states = self.dropout(hidden_states)
-        # hidden_states = self.LayerNorm(hidden_states + input_tensor)
-        return hidden_states + input_tensor
+        hidden_states = self.LayerNorm(hidden_states + input_tensor)
+        return hidden_states
 
 class MoEFFN(nn.Module):
     def __init__(self, config):
@@ -271,10 +271,10 @@ class FastformerEncoder(nn.Module):
         batch_size, seq_length, emb_dim = input_embs.shape
         position_ids = torch.arange(seq_length, dtype=torch.long, device=input_embs.device)
         position_ids = position_ids.unsqueeze(0).expand(batch_size, -1)
-        # position_embeddings = self.position_embeddings(position_ids)
+        position_embeddings = self.position_embeddings(position_ids)
 
-        # embeddings = input_embs + position_embeddings
-        embeddings = input_embs
+        embeddings = input_embs + position_embeddings
+        # embeddings = input_embs
         embeddings = self.LayerNorm(embeddings)
         embeddings = self.dropout(embeddings)
         #print(embeddings.size())

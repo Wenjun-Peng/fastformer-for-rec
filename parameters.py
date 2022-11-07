@@ -104,8 +104,6 @@ def parse_args():
     parser.add_argument("--test_steps", type=int, default=1000000)
     parser.add_argument("--max_hit_ratio", type=float, default=1)
 
-    parser.add_argument("--use_moe", type=bool, default=False)
-
     args = parser.parse_args()
     logging.info(args)
     return args

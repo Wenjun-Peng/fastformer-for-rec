@@ -172,11 +172,11 @@ def load_file(path, label_map):
     all_label = []
     with open(path, 'r') as f:
         for line in f:
-            news_info = line.strip().split('\t')
+            news_info = line.strip('\n').split('\t')
             label_name = news_info[1]
             if label_name not in label_map:
                 label_map[label_name] = len(label_map)
-            text = news_info[3]
+            text = " ".join([news_info[1], news_info[2], news_info[3]])
             all_text.append(text)
             all_label.append(label_map[label_name])
     return all_text, all_label, label_map
@@ -212,13 +212,10 @@ def prepare_glove():
     dataset = load_mind('/workspaceblobstore/v-wenjunpeng/mind/')
     text=[]
     label=[]
-
-    save_text = []
-    for row in dataset['train']['text']+dataset['test']['text']:
-        text.append(wordpunct_tokenize(row.lower()))
-        save_text.append(row.lower())
-    for row in dataset['train']['label']+dataset['test']['label']:
-        label.append(row)
+    
+    for row in dataset['train']['text']+dataset['test']['text']+dataset['dev']['text']:
+        tokens = wordpunct_tokenize(row.lower())
+        text.append(tokens)
     word_dict= {'[PAD]':0, '[UNK]':1}
     word_count_map = {'[PAD]':1, '[UNK]':1}
     for sent in text:    
@@ -243,7 +240,8 @@ def prepare_glove():
     
     
 if __name__ == '__main__':
-
+    if not os.path.exists('../data/glove'):
+        os.mkdir('../data/glove')
     prepare_glove()
     with open('../data/glove/count_map.json', 'r') as f:
         wcm = json.loads(f.read())

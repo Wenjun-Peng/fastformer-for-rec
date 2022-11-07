@@ -52,7 +52,7 @@ class NewsInfo:
         assert isinstance(sent, str)
         # sent_split = self.tokenizers(sent, max_length=max_len, pad_to_max_length=True, truncation=True)
         # return sent_split
-        sent_split = self.tokenizers(sent)
+        sent_split = self.tokenizers(sent.lower())
 
         input_ids = []
         attention_mask = []
