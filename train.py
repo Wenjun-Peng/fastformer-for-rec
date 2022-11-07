@@ -11,6 +11,7 @@ import sys
 import traceback
 
 import torch
+from torch import nn
 from tqdm.auto import tqdm
 import torch.optim as optim
 from torch.nn.parallel import DistributedDataParallel as DDP

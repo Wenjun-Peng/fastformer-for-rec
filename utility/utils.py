@@ -29,7 +29,7 @@ def str2bool(v):
     else:
         raise argparse.ArgumentTypeError("Boolean value expected.")
 
-def setuplogger():
+def setuplogger(log_path="/workspaceblobstore/v-wenjunpeng/mind/log.txt"):
     root = logging.getLogger()
     # logging.basicConfig(format="[%(levelname)s %(asctime)s] %(message)s", level=logging.INFO)
     root.setLevel(logging.INFO)
@@ -40,6 +40,9 @@ def setuplogger():
     if (root.hasHandlers()):
         root.handlers.clear()
     root.addHandler(handler)
+
+    fileHandler = logging.FileHandler(log_path)
+    root.addHandler(fileHandler)
 
 
 def dump_args(args):
