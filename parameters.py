@@ -67,8 +67,8 @@ def parse_args():
     )
     parser.add_argument("--user_log_mask", type=utils.str2bool, default=True)
     parser.add_argument("--drop_rate", type=float, default=0.2)
-    parser.add_argument("--save_steps", type=int, default=100000)
-    parser.add_argument("--max_steps_per_epoch", type=int, default=1000000)
+    parser.add_argument("--save_steps", type=int, default=10000)
+    parser.add_argument("--max_steps_per_epoch", type=int, default=10000)
 
     parser.add_argument(
         "--load_ckpt_name",
@@ -101,7 +101,7 @@ def parse_args():
     parser.add_argument("--savename", type=str, default='speedy')
     parser.add_argument("--warmup_step", type=int, default=2000)
     parser.add_argument("--schedule_step", type=int, default=30000)
-    parser.add_argument("--test_steps", type=int, default=1000000)
+    parser.add_argument("--test_steps", type=int, default=10000)
     parser.add_argument("--max_hit_ratio", type=float, default=1)
 
     args = parser.parse_args()

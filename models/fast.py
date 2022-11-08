@@ -147,7 +147,7 @@ class FastformerSelfOutput(nn.Module):
     def forward(self, hidden_states, input_tensor):
         hidden_states = self.dense(hidden_states)
         hidden_states = self.dropout(hidden_states)
-        # hidden_states = self.LayerNorm(hidden_states + input_tensor)
+        hidden_states = self.LayerNorm(hidden_states + input_tensor)
         # hidden_states = hidden_states + input_tensor
         return hidden_states
 
@@ -182,7 +182,7 @@ class FastformerFFN(nn.Module):
         hidden_states = self.output_dense(hidden_states)
         hidden_states = self.dropout(hidden_states)
         # hidden_states = self.LayerNorm(hidden_states + input_tensor)
-        return hidden_states
+        return hidden_states + input_tensor
 
 class MoEFFN(nn.Module):
     def __init__(self, config):
@@ -275,7 +275,7 @@ class FastformerEncoder(nn.Module):
 
         # embeddings = input_embs + position_embeddings
         embeddings = input_embs
-        # embeddings = self.LayerNorm(embeddings)
+        embeddings = self.LayerNorm(embeddings)
         embeddings = self.dropout(embeddings)
         #print(embeddings.size())
         all_hidden_states = [embeddings]
