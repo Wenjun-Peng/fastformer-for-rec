@@ -26,12 +26,13 @@ from io import open
 
 import torch
 from torch import nn
-from torch.nn import CrossEntropyLoss, MSELoss
+from torch.nn import CrossEntropyLoss, MSELoss, init
 
 from transformers.modeling_utils import PreTrainedModel, prune_linear_layer
 from transformers.configuration_bert import BertConfig
 from transformers.file_utils import add_start_docstrings
 from models.moe import MoE
+# from moe import MoE
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +150,7 @@ class BertEmbeddings(nn.Module):
     def __init__(self, config):
         super(BertEmbeddings, self).__init__()
         embs = self.load_embedding('data/glove/glove_embs_for_mind.pt')
-        self.word_embedding = nn.Embedding(config.vocab_size, 300, padding_idx=0, _weight=embs)
+        self.word_embeddings = nn.Embedding(config.vocab_size, 300, padding_idx=0, _weight=embs)
         self.fc = nn.Linear(300, config.hidden_size)
         # self.word_embeddings = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=0)
         self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
@@ -179,13 +180,14 @@ class BertEmbeddings(nn.Module):
             token_type_ids = torch.zeros_like(input_ids)
 
         words_embeddings = self.word_embeddings(input_ids)
+        words_embeddings = self.fc(words_embeddings)
         position_embeddings = self.position_embeddings(position_ids)
         token_type_embeddings = self.token_type_embeddings(token_type_ids)
 
         embeddings = words_embeddings + position_embeddings + token_type_embeddings
         embeddings = self.LayerNorm(embeddings)
         embeddings = self.dropout(embeddings)
-        embeddings = self.fc(embeddings)
+        
         return embeddings
 
 
@@ -361,7 +363,8 @@ class BertLayer(nn.Module):
     def __init__(self, config):
         super(BertLayer, self).__init__()
         self.attention = BertAttention(config)
-        if self.config.is_moe:
+        self.config = config
+        if config.is_moe:
             self.fnn = MoEFFN(config)
         else:
             self.intermediate = BertIntermediate(config)
@@ -633,11 +636,17 @@ class BertModel(BertPreTrainedModel):
         for layer, heads in heads_to_prune.items():
             self.encoder.layer[layer].attention.prune_heads(heads)
 
-    def forward(self, input_ids, attention_mask=None, token_type_ids=None, position_ids=None, head_mask=None):
+    def forward(self, input_ids=None, attention_mask=None, token_type_ids=None, position_ids=None, head_mask=None, inputs=None):
         if attention_mask is None:
-            attention_mask = torch.ones_like(input_ids)
+            if input_ids is None:
+                attention_mask = torch.ones_like(inputs)
+            else:
+                attention_mask = torch.ones_like(input_ids)
         if token_type_ids is None:
-            token_type_ids = torch.zeros_like(input_ids)
+            if input_ids is None:
+                token_type_ids = torch.zeros_like(inputs)
+            else:
+                token_type_ids = torch.zeros_like(input_ids)
 
         # We create a 3D attention mask from a 2D tensor mask.
         # Sizes are [batch_size, 1, 1, to_seq_length]
@@ -669,7 +678,10 @@ class BertModel(BertPreTrainedModel):
         else:
             head_mask = [None] * self.config.num_hidden_layers
 
-        embedding_output = self.embeddings(input_ids, position_ids=position_ids, token_type_ids=token_type_ids)
+        if input_ids is not None:
+            embedding_output = self.embeddings(input_ids, position_ids=position_ids, token_type_ids=token_type_ids)
+        else:
+            embedding_output = inputs
         encoder_outputs = self.encoder(embedding_output,
                                        extended_attention_mask,
                                        head_mask=head_mask)
@@ -1195,3 +1207,9 @@ class BertForQuestionAnswering(BertPreTrainedModel):
             outputs = (total_loss,) + outputs
 
         return outputs  # (loss), start_logits, end_logits, (hidden_states), (attentions)
+
+
+if __name__ == '__main__':
+    ffconfig = BertConfig.from_json_file('models/ffconfig.json')
+    model = BertModel(ffconfig)
+    print(model)

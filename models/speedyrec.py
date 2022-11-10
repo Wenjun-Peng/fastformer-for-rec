@@ -5,7 +5,6 @@ from utility.utils import MODEL_CLASSES
 from models.fast import Fastformer
 from models.trans import BertModel
 from models.moe import MoE
-from transformers.modeling_bert import BertModel
 
 ffconfig = BertConfig.from_json_file('models/ffconfig.json')
 
@@ -37,9 +36,9 @@ class TextEncoder(nn.Module):
         super(TextEncoder, self).__init__()
         self.args = args
         self.config = ffconfig
-        # self.unicoder = Fastformer(self.config)
-        self.unicoder = BertModel(self.config)
-        self.drop_layer = nn.Dropout(p=args.drop_rate)
+        self.unicoder = Fastformer(self.config)
+        # self.unicoder = BertModel(self.config)
+        # self.drop_layer = nn.Dropout(p=args.drop_rate)
         self.fc = nn.Linear(
             self.config.hidden_size,
             args.news_dim)
@@ -58,13 +57,14 @@ class TextEncoder(nn.Module):
         text_ids = torch.narrow(inputs, 1, 0, num_words)
         text_attmask = torch.narrow(inputs, 1, num_words, num_words)
 
-        sent_vec = self.unicoder(text_ids, text_attmask)[0]  # B L D
-        # sent_vec = self.unicoder(text_ids, text_attmask)
-        if 'abstract' in self.args.news_attributes:
-            sent_vec = self.sent_att(sent_vec, text_attmask)
-        else:
-            sent_vec = torch.mean(sent_vec, dim=1)
+        # sent_vec = self.unicoder(text_ids, text_attmask)[1]  # B L D
+        sent_vec = self.unicoder(text_ids, text_attmask)
+        # if 'abstract' in self.args.news_attributes:
+        #     sent_vec = self.sent_att(sent_vec, text_attmask)
+        # else:
+        #     sent_vec = torch.mean(sent_vec, dim=1)
         
+        # print(sent_vec.size())
         news_vec = self.fc(sent_vec)
 
         return news_vec
@@ -98,7 +98,7 @@ class UserEncoder(nn.Module):
             args.news_dim, args.news_dim,
             drop_rate=args.drop_rate)
 
-        self.encoder = Fastformer(ffconfig)
+        # self.encoder = Fastformer(ffconfig)
         # self.encoder = BertModel(ffconfig)
 
     def get_user_log_vec(
@@ -118,7 +118,7 @@ class UserEncoder(nn.Module):
                 bz, sent_vecs.size(1), self.args.news_dim)
             sent_vecs = sent_vecs * log_mask.unsqueeze(2) + padding_doc * (1 - log_mask.unsqueeze(2))
             user_log_vecs = attn_pool(sent_vecs)
-        user_log_vecs = self.encoder(inputs_embeds=sent_vecs, attention_mask=log_mask)[1]
+        # user_log_vecs = self.encoder(inputs=sent_vecs, attention_mask=log_mask)[1]
         # user_log_vecs = self.encoder(inputs=sent_vecs, mask=log_mask)
         return user_log_vecs
 

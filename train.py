@@ -81,7 +81,7 @@ def train(local_rank,
 
 
         model = model.to(device)
-        print(model)
+        logging.info(model)
         rest_param = filter(
             lambda x: id(x) not in list(map(id, model.news_encoder.unicoder.parameters())),
             model.parameters())
