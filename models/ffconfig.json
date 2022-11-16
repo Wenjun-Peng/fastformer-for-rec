@@ -13,8 +13,8 @@
     "pooler_type": "weightpooler",
     "enable_fp16": false,
     "num_labels": 2,
-    "num_expert": 4,
+    "num_expert": 2,
     "num_selected_expert": 2,
     "expert_hidden_size": 200,
-    "is_moe": 0
+    "is_moe": 1
 }

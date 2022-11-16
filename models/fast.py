@@ -3,7 +3,7 @@ import logging
 import torch
 from torch import nn
 from transformers.modeling_bert import BertSelfOutput, BertIntermediate, BertOutput
-from models.moe import MoE
+from models.moe import MoE, DenseMoE
 from torch.nn import init
 
 BertLayerNorm = torch.nn.LayerNorm
@@ -187,11 +187,17 @@ class FastformerFFN(nn.Module):
 class MoEFFN(nn.Module):
     def __init__(self, config):
         super(MoEFFN, self).__init__()
-        self.MoELayer = MoE(input_size=config.hidden_size, 
+        # self.MoELayer = MoE(input_size=config.hidden_size, 
+        #                     output_size=config.hidden_size, 
+        #                     hidden_size=config.expert_hidden_size, 
+        #                     num_experts=config.num_expert, 
+        #                     k=config.num_selected_expert)
+
+        self.MoELayer = DenseMoE(input_size=config.hidden_size, 
                             output_size=config.hidden_size, 
                             hidden_size=config.expert_hidden_size, 
-                            num_experts=config.num_expert, 
-                            k=config.num_selected_expert)
+                            num_experts=config.num_expert)
+        
         self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
     

@@ -98,7 +98,7 @@ class UserEncoder(nn.Module):
             args.news_dim, args.news_dim,
             drop_rate=args.drop_rate)
 
-        # self.encoder = Fastformer(ffconfig)
+        self.encoder = Fastformer(ffconfig)
         # self.encoder = BertModel(ffconfig)
 
     def get_user_log_vec(
@@ -110,16 +110,16 @@ class UserEncoder(nn.Module):
             pad_doc,
             use_mask=True
     ):
-        bz = sent_vecs.shape[0]
-        if use_mask:
-            user_log_vecs = attn_pool(sent_vecs, log_mask)
-        else:
-            padding_doc = pad_doc.expand(bz, self.args.news_dim).unsqueeze(1).expand(
-                bz, sent_vecs.size(1), self.args.news_dim)
-            sent_vecs = sent_vecs * log_mask.unsqueeze(2) + padding_doc * (1 - log_mask.unsqueeze(2))
-            user_log_vecs = attn_pool(sent_vecs)
+        # bz = sent_vecs.shape[0]
+        # if use_mask:
+        #     user_log_vecs = attn_pool(sent_vecs, log_mask)
+        # else:
+        #     padding_doc = pad_doc.expand(bz, self.args.news_dim).unsqueeze(1).expand(
+        #         bz, sent_vecs.size(1), self.args.news_dim)
+        #     sent_vecs = sent_vecs * log_mask.unsqueeze(2) + padding_doc * (1 - log_mask.unsqueeze(2))
+        #     user_log_vecs = attn_pool(sent_vecs)
         # user_log_vecs = self.encoder(inputs=sent_vecs, attention_mask=log_mask)[1]
-        # user_log_vecs = self.encoder(inputs=sent_vecs, mask=log_mask)
+        user_log_vecs = self.encoder(inputs=sent_vecs, mask=log_mask)
         return user_log_vecs
 
     def forward(self, user_news_vecs, log_mask,
