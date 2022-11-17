@@ -208,7 +208,8 @@ class MoEFFN(nn.Module):
             attention_output = attention_output.view(-1, D)
         hidden_states, moe_loss = self.MoELayer(attention_output)
         hidden_states = self.dropout(hidden_states)
-
+        # print(hidden_states.size(), attention_output.size())
+        hidden_states = hidden_states + attention_output
         # if hidden_states.size() == attention_output.size():
         #     hidden_states = self.LayerNorm(hidden_states + attention_output)
 

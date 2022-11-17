@@ -300,6 +300,7 @@ class DenseMoE(nn.Module):
         self.expert_layer2 = nn.Linear(hidden_size*num_experts, output_size*num_experts)
         self.w_gate = nn.Parameter(torch.zeros(input_size, num_experts), requires_grad=True)
         self.w_noise = nn.Parameter(torch.zeros(input_size, num_experts), requires_grad=True)
+        self.relu = nn.ReLU()
         self.softplus = nn.Softplus()
         self.softmax = nn.Softmax(1)
         self.register_buffer("mean", torch.tensor([0.0]))
@@ -383,7 +384,9 @@ class DenseMoE(nn.Module):
         loss *= loss_coef
 
         x = self.expert_layer1(x)
+        x = self.relu(x)
         x = self.expert_layer2(x)
+        x = self.softmax(x)
 
         # N x num_experts x output_size
         x = x.view(N, self.num_experts, self.output_size)
@@ -393,9 +396,9 @@ class DenseMoE(nn.Module):
         # print(gates.size())
 
         output = torch.bmm(gates, x)
-        # print(output.size())
 
-        output.squeeze()
+        output = output.squeeze()
+        # print(output.size())
         return output, loss
 
 if __name__ == '__main__':

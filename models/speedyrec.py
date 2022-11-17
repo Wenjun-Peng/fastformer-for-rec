@@ -53,6 +53,7 @@ class TextEncoder(nn.Module):
 
     def sent_encode(self, inputs):
         batch_size, num_words = inputs.shape
+        # print(batch_size, num_words)
         num_words = num_words // 2
         text_ids = torch.narrow(inputs, 1, 0, num_words)
         text_attmask = torch.narrow(inputs, 1, num_words, num_words)
