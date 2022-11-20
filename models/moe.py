@@ -7,9 +7,10 @@
 # The code is based on the TensorFlow implementation:
 # https://github.com/tensorflow/tensor2tensor/blob/master/tensor2tensor/utils/expert_utils.py
 
-
+import math
 import torch
 import torch.nn as nn
+from torch.nn import init
 from torch.distributions.normal import Normal
 import numpy as np
 
@@ -272,7 +273,7 @@ class MoE(nn.Module):
         else:
             gates, load = self.noisy_top_k_gating(x, self.training)
         
-        print(gates)
+        # print(gates)
         # calculate importance loss
         importance = gates.sum(0)
         #
@@ -296,8 +297,20 @@ class DenseMoE(nn.Module):
         self.input_size = input_size
         self.hidden_size = hidden_size
         # instantiate experts
-        self.expert_layer1 = nn.Linear(input_size, hidden_size*num_experts)
-        self.expert_layer2 = nn.Linear(hidden_size*num_experts, output_size*num_experts)
+        # self.expert_layer1 = nn.Linear(input_size, hidden_size*num_experts)
+
+        self.register_parameter('expert_w1', nn.Parameter(torch.empty(num_experts, input_size, hidden_size), requires_grad=True))
+        self.register_parameter('expert_b1', nn.Parameter(torch.empty(num_experts, 1, hidden_size), requires_grad=True))
+        self.register_parameter('expert_w2', nn.Parameter(torch.empty(num_experts, hidden_size, output_size), requires_grad=True))
+        self.register_parameter('expert_b2', nn.Parameter(torch.empty(num_experts, 1, output_size), requires_grad=True))
+
+        # self.expert_layer2 = nn.Linear(hidden_size*num_experts, output_size*num_experts)
+        
+        # print(self.expert_w1[0], self.expert_b1[0])
+        self.init_wb_(self.expert_w1, self.expert_b1)
+        self.init_wb_(self.expert_w2, self.expert_b2)
+        # print(self.expert_w1[0], self.expert_b1[0])
+
         self.w_gate = nn.Parameter(torch.zeros(input_size, num_experts), requires_grad=True)
         self.w_noise = nn.Parameter(torch.zeros(input_size, num_experts), requires_grad=True)
         self.relu = nn.ReLU()
@@ -305,6 +318,13 @@ class DenseMoE(nn.Module):
         self.softmax = nn.Softmax(1)
         self.register_buffer("mean", torch.tensor([0.0]))
         self.register_buffer("std", torch.tensor([1.0]))
+
+    def init_wb_(self, w, b=None):
+        init.kaiming_uniform_(w, a=math.sqrt(5))
+        if b is not None:
+            fan_in, _ = init._calculate_fan_in_and_fan_out(w)
+            bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0
+            init.uniform_(b, -bound, bound)
 
     def cv_squared(self, x):
         """The squared coefficient of variation of a sample.
@@ -383,17 +403,31 @@ class DenseMoE(nn.Module):
         loss = self.cv_squared(importance) + self.cv_squared(load)
         loss *= loss_coef
 
-        x = self.expert_layer1(x)
+        # num_experts x bz*seq x input_size
+        expert_input = torch.stack([x, ] * self.num_experts, dim=0)
+        # print(torch.isnan(x).any())
+        # print(expert_input.size())
+        x = torch.bmm(expert_input, self.expert_w1) + self.expert_b1
+        # print(torch.isnan(x).any())
         x = self.relu(x)
-        x = self.expert_layer2(x)
+        # print(torch.isnan(x).any())
+        # num_experts x bz*seq x output_size
+        x = torch.bmm(x, self.expert_w2) + self.expert_b2
+        # print(torch.isnan(x).any())
         x = self.softmax(x)
-
+        # print(torch.isnan(x).any())
+        # print(x.size())
+        
         # N x num_experts x output_size
+        x = x.transpose(0, 1)
+        # print(x.size())
         x = x.view(N, self.num_experts, self.output_size)
         # print(x.size())
+        # print(x)
         # N x 1 x num_experts
         gates = gates.unsqueeze(1)
         # print(gates.size())
+        # print(gates)
 
         output = torch.bmm(gates, x)
 
@@ -408,3 +442,4 @@ if __name__ == '__main__':
 
     inputs = torch.randn(5, 1000)
     out, aux_loss = model(inputs) # (4, 1024, 512), (1,)
+    # print(out)
