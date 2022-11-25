@@ -114,6 +114,7 @@ class SparseDispatcher(object):
         # split nonzero gates for each expert
         return torch.split(self._nonzero_gates, self._part_sizes, dim=0)
 
+
 class MLP(nn.Module):
     def __init__(self, input_size, output_size, hidden_size):
         super(MLP, self).__init__()
@@ -131,7 +132,6 @@ class MLP(nn.Module):
 
 
 class MoE(nn.Module):
-
     """Call a Sparsely gated mixture of experts layer with 1-layer Feed-Forward networks as experts.
     Args:
     input_size: integer - size of the input
@@ -151,7 +151,8 @@ class MoE(nn.Module):
         self.hidden_size = hidden_size
         self.k = k
         # instantiate experts
-        self.experts = nn.ModuleList([MLP(self.input_size, self.output_size, self.hidden_size) for i in range(self.num_experts)])
+        self.experts = nn.ModuleList(
+            [MLP(self.input_size, self.output_size, self.hidden_size) for i in range(self.num_experts)])
         self.w_gate = nn.Parameter(torch.zeros(input_size, num_experts), requires_grad=True)
         self.w_noise = nn.Parameter(torch.zeros(input_size, num_experts), requires_grad=True)
 
@@ -159,7 +160,7 @@ class MoE(nn.Module):
         self.softmax = nn.Softmax(1)
         self.register_buffer("mean", torch.tensor([0.0]))
         self.register_buffer("std", torch.tensor([1.0]))
-        assert(self.k <= self.num_experts)
+        assert (self.k <= self.num_experts)
 
     def cv_squared(self, x):
         """The squared coefficient of variation of a sample.
@@ -176,7 +177,7 @@ class MoE(nn.Module):
 
         if x.shape[0] == 1:
             return torch.tensor([0], device=x.device, dtype=x.dtype)
-        return x.float().var() / (x.float().mean()**2 + eps)
+        return x.float().var() / (x.float().mean() ** 2 + eps)
 
     def _gates_to_load(self, gates):
         """Compute the true load per expert, given the gates.
@@ -216,8 +217,8 @@ class MoE(nn.Module):
         threshold_if_out = torch.unsqueeze(torch.gather(top_values_flat, 0, threshold_positions_if_out), 1)
         # is each value currently in the top k.
         normal = Normal(self.mean, self.std)
-        prob_if_in = normal.cdf((clean_values - threshold_if_in)/noise_stddev)
-        prob_if_out = normal.cdf((clean_values - threshold_if_out)/noise_stddev)
+        prob_if_in = normal.cdf((clean_values - threshold_if_in) / noise_stddev)
+        prob_if_out = normal.cdf((clean_values - threshold_if_out) / noise_stddev)
         prob = torch.where(is_in, prob_if_in, prob_if_out)
         return prob
 
@@ -249,7 +250,7 @@ class MoE(nn.Module):
 
         zeros = torch.zeros_like(logits, requires_grad=True)
         gates = zeros.scatter(1, top_k_indices, top_k_gates)
-        
+
         if self.noisy_gating and self.k < self.num_experts and train:
             load = (self._prob_in_top_k(clean_logits, noisy_logits, noise_stddev, top_logits)).sum(0)
         else:
@@ -261,7 +262,6 @@ class MoE(nn.Module):
         x: tensor shape [batch_size, input_size]
         train: a boolean scalar.
         loss_coef: a scalar - multiplier on load-balancing losses
-
         Returns:
         y: a tensor with shape [batch_size, output_size].
         extra_training_loss: a scalar.  This should be added into the overall
@@ -272,7 +272,7 @@ class MoE(nn.Module):
             gates, load = self.noisy_top_k_gating(gate_inputs, self.training)
         else:
             gates, load = self.noisy_top_k_gating(x, self.training)
-        
+
         # print(gates)
         # calculate importance loss
         importance = gates.sum(0)
@@ -287,25 +287,28 @@ class MoE(nn.Module):
         y = dispatcher.combine(expert_outputs)
         return y, loss
 
-    
+
 class DenseMoE(nn.Module):
-    def __init__(self, input_size, output_size, num_experts, hidden_size, noisy_gating=True):
+    def __init__(self, input_size, output_size, num_experts, hidden_size, noisy_gating=True, k=2):
         super(DenseMoE, self).__init__()
         self.noisy_gating = noisy_gating
         self.num_experts = num_experts
         self.output_size = output_size
         self.input_size = input_size
         self.hidden_size = hidden_size
+        self.k = k
         # instantiate experts
-        # self.expert_layer1 = nn.Linear(input_size, hidden_size*num_experts)
+        self.expert_layer1 = nn.Linear(input_size, hidden_size*num_experts)
 
-        self.register_parameter('expert_w1', nn.Parameter(torch.empty(num_experts, input_size, hidden_size), requires_grad=True))
+        self.register_parameter('expert_w1',
+                                nn.Parameter(torch.empty(num_experts, input_size, hidden_size), requires_grad=True))
         self.register_parameter('expert_b1', nn.Parameter(torch.empty(num_experts, 1, hidden_size), requires_grad=True))
-        self.register_parameter('expert_w2', nn.Parameter(torch.empty(num_experts, hidden_size, output_size), requires_grad=True))
+        self.register_parameter('expert_w2',
+                                nn.Parameter(torch.empty(num_experts, hidden_size, output_size), requires_grad=True))
         self.register_parameter('expert_b2', nn.Parameter(torch.empty(num_experts, 1, output_size), requires_grad=True))
 
         # self.expert_layer2 = nn.Linear(hidden_size*num_experts, output_size*num_experts)
-        
+
         # print(self.expert_w1[0], self.expert_b1[0])
         self.init_wb_(self.expert_w1, self.expert_b1)
         self.init_wb_(self.expert_w2, self.expert_b2)
@@ -341,7 +344,40 @@ class DenseMoE(nn.Module):
 
         if x.shape[0] == 1:
             return torch.tensor([0], device=x.device, dtype=x.dtype)
-        return x.float().var() / (x.float().mean()**2 + eps)
+        return x.float().var() / (x.float().mean() ** 2 + eps)
+
+    def _prob_in_top_k(self, clean_values, noisy_values, noise_stddev, noisy_top_values):
+        """Helper function to NoisyTopKGating.
+        Computes the probability that value is in top k, given different random noise.
+        This gives us a way of backpropagating from a loss that balances the number
+        of times each expert is in the top k experts per example.
+        In the case of no noise, pass in None for noise_stddev, and the result will
+        not be differentiable.
+        Args:
+        clean_values: a `Tensor` of shape [batch, n].
+        noisy_values: a `Tensor` of shape [batch, n].  Equal to clean values plus
+          normally distributed noise with standard deviation noise_stddev.
+        noise_stddev: a `Tensor` of shape [batch, n], or None
+        noisy_top_values: a `Tensor` of shape [batch, m].
+           "values" Output of tf.top_k(noisy_top_values, m).  m >= k+1
+        Returns:
+        a `Tensor` of shape [batch, n].
+        """
+        batch = clean_values.size(0)
+        m = noisy_top_values.size(1)
+        top_values_flat = noisy_top_values.flatten()
+
+        threshold_positions_if_in = torch.arange(batch, device=clean_values.device) * m + self.k
+        threshold_if_in = torch.unsqueeze(torch.gather(top_values_flat, 0, threshold_positions_if_in), 1)
+        is_in = torch.gt(noisy_values, threshold_if_in)
+        threshold_positions_if_out = threshold_positions_if_in - 1
+        threshold_if_out = torch.unsqueeze(torch.gather(top_values_flat, 0, threshold_positions_if_out), 1)
+        # is each value currently in the top k.
+        normal = Normal(self.mean, self.std)
+        prob_if_in = normal.cdf((clean_values - threshold_if_in) / noise_stddev)
+        prob_if_out = normal.cdf((clean_values - threshold_if_out) / noise_stddev)
+        prob = torch.where(is_in, prob_if_in, prob_if_out)
+        return prob
 
     def _gates_to_load(self, gates):
         """Compute the true load per expert, given the gates.
@@ -372,8 +408,17 @@ class DenseMoE(nn.Module):
             logits = noisy_logits
         else:
             logits = clean_logits
-        
+
+        mask = torch.zeros_like(logits)
+        top_logits, top_indices = logits.topk(min(self.k + 1, self.num_experts), dim=1)
+        top_k_indices = top_indices[:, :self.k]
+        dim1_indices = torch.arange(logits.size(0)).unsqueeze(-1).repeat(1, self.k).long()
+        mask[dim1_indices, top_k_indices] = 1
+        logits.masked_fill_(mask.bool(), -1e8)
         gates = self.softmax(logits)
+        # if self.noisy_gating and self.k < self.num_experts and train:
+        #     load = (self._prob_in_top_k(clean_logits, noisy_logits, noise_stddev, top_logits)).sum(0)
+        # else:
         load = self._gates_to_load(gates)
         return gates, load
 
@@ -382,7 +427,6 @@ class DenseMoE(nn.Module):
         x: tensor shape [batch_size, input_size]
         train: a boolean scalar.
         loss_coef: a scalar - multiplier on load-balancing losses
-
         Returns:
         y: a tensor with shape [batch_size, output_size].
         extra_training_loss: a scalar.  This should be added into the overall
@@ -395,19 +439,21 @@ class DenseMoE(nn.Module):
             gates, load = self.get_noisy_gating(gate_inputs, self.training)
         else:
             gates, load = self.get_noisy_gating(x, self.training)
-        
+
         # print(gates)
         # calculate importance loss
         importance = gates.sum(0)
-        #
+
         loss = self.cv_squared(importance) + self.cv_squared(load)
         loss *= loss_coef
 
         # num_experts x bz*seq x input_size
-        expert_input = torch.stack([x, ] * self.num_experts, dim=0)
+        # expert_input = torch.stack([x, ] * self.num_experts, dim=0)
+        # expert_input = x.unsqueeze(0).repeat(self.num_experts, 1, 1)
         # print(torch.isnan(x).any())
-        # print(expert_input.size())
-        x = torch.bmm(expert_input, self.expert_w1) + self.expert_b1
+        # x = torch.bmm(expert_input, self.expert_w1) + self.expert_b1
+        x = self.expert_layer1(x)
+        x = x.view(N, self.num_experts, -1).transpose(0, 1)
         # print(torch.isnan(x).any())
         x = self.relu(x)
         # print(torch.isnan(x).any())
@@ -417,7 +463,7 @@ class DenseMoE(nn.Module):
         x = self.softmax(x)
         # print(torch.isnan(x).any())
         # print(x.size())
-        
+
         # N x num_experts x output_size
         x = x.transpose(0, 1)
         # print(x.size())
@@ -435,11 +481,12 @@ class DenseMoE(nn.Module):
         # print(output.size())
         return output, loss
 
-if __name__ == '__main__':
-    model = DenseMoE(input_size=1000, num_experts=4, hidden_size=66, output_size=200, noisy_gating=True)
 
+if __name__ == '__main__':
+    model = DenseMoE(input_size=1000, num_experts=4, hidden_size=66, output_size=200, noisy_gating=True, k=2)
+    # model = MoE(input_size=1000, num_experts=4, hidden_size=66, output_size=200, noisy_gating=True, k=2)
     print(model)
 
     inputs = torch.randn(5, 1000)
-    out, aux_loss = model(inputs) # (4, 1024, 512), (1,)
-    # print(out)
+    out, aux_loss = model(inputs)  # (4, 1024, 512), (1,)
+    print(out.size())
